@@ -59,7 +59,7 @@ export async function runAlerts(opts: { send?: Sender; now?: Date } = {}): Promi
   const rules = await prisma.alertRule.findMany({ where: { enabled: true } });
   const watched = await prisma.wallet.findMany({
     where: { isWatched: true },
-    select: { address: true, category: true, label: true, backfilledAt: true },
+    select: { address: true, category: true, label: true, backfilledAt: true, historyFrom: true },
   });
   const labels = new Map(
     (await prisma.wallet.findMany({ select: { address: true, label: true } })).map((w) => [w.address, w.label]),
@@ -79,8 +79,12 @@ export async function runAlerts(opts: { send?: Sender; now?: Date } = {}): Promi
       take: 5000,
     });
     const transferRules = rules.filter((r) => r.type === "WHALE" || r.type === "NEW_COUNTERPARTY");
-    // Кошельки без загруженной истории: для них любой контрагент выглядел бы «новым»
-    const historyReady = new Set(watched.filter((w) => w.backfilledAt).map((w) => w.address));
+    // «Новизну» адреса можно судить, только зная хотя бы неделю истории кошелька.
+    // У очень активных адресов история обрезана до минут — там любой контрагент выглядел бы «новым».
+    const weekAgo = now.getTime() - 7 * 86_400_000;
+    const historyReady = new Set(
+      watched.filter((w) => w.backfilledAt && w.historyFrom && w.historyFrom.getTime() <= weekAgo).map((w) => w.address),
+    );
 
     for (const rule of transferRules) {
       const scope = await ruleScope(rule, watched);

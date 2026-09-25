@@ -143,6 +143,15 @@ test("alerts: whale, new counterparty, no duplicates, backfill ignored", async (
   assert.ok(!again.some((m) => m.includes("🐋") || m.includes("Новый адрес")), "no duplicates on rerun");
 });
 
+test("alerts: no 'new address' for wallets with less than a week of known history", async () => {
+  await prisma.wallet.update({ where: { address: OTC }, data: { historyFrom: new Date(Date.now() - 3_600_000) } });
+  await saveTransfers([t("TFreshAddr111111111111111111111111", OTC, 9_000, 1)]);
+  const sent: string[] = [];
+  await runAlerts({ send: async (h) => void sent.push(h) });
+  assert.ok(!sent.some((m) => m.includes("Новый адрес")), "truncated history → cannot judge novelty");
+  await prisma.wallet.update({ where: { address: OTC }, data: { historyFrom: new Date(Date.now() - 10 * 86_400_000) } });
+});
+
 test("alerts: failed delivery is recorded", async () => {
   await saveTransfers([t(C2, EX, 30_000, 1)]);
   const r = await runAlerts({ send: async () => Promise.reject(new Error("Чат не найден")) });
