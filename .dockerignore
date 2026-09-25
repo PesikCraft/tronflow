@@ -1,0 +1,9 @@
+node_modules
+.next
+src/generated
+.env
+.env.*
+!.env.example
+deploy/.env
+*.tsbuildinfo
+.DS_Store

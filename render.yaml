@@ -1,0 +1,37 @@
+# Render Blueprint: бесплатный веб-сервис, в котором работают и сайт, и воркер.
+# База — внешняя (Supabase Free), строка подключения задаётся в DATABASE_URL.
+services:
+  - type: web
+    name: tronflow
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci && npm run build && npm run build:worker
+    startCommand: bash scripts/start-render.sh
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: TRONGRID_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      # Бесплатная база Supabase — 500 МБ: храним 30 дней, следим за размером
+      - key: TRANSFER_RETENTION_DAYS
+        value: "30"
+      - key: DB_SIZE_LIMIT_MB
+        value: "500"
+      - key: BACKFILL_MAX_PAGES
+        value: "25"
+      # Пулер Supabase в session-режиме ограничивает число соединений
+      - key: DATABASE_POOL_MAX
+        value: "4"

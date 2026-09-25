@@ -1,0 +1,84 @@
+# Сервер: база, миграции, сайт, воркер, HTTPS-прокси и ежедневный бэкап.
+#   docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build
+name: tronflow
+
+x-app: &app
+  image: tronflow-app
+  build: ..
+  env_file: .env
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tronflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD не задан}
+      POSTGRES_DB: tronflow
+      TZ: UTC
+      PGTZ: UTC
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tronflow -d tronflow"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on: { db: { condition: service_healthy } }
+    restart: "no"
+
+  web:
+    <<: *app
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      start_period: 30s
+
+  worker:
+    <<: *app
+    command: ["npx", "tsx", "worker/index.ts"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    stop_grace_period: 90s
+
+  caddy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN не задан}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+    restart: unless-stopped
+
+  backup:
+    image: postgres:17-alpine
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Yerevan
+    volumes: [./backups:/backups]
+    depends_on: { db: { condition: service_healthy } }
+    # Раз в сутки: дамп базы, хранится 14 дней
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          pg_dump -h db -U tronflow -d tronflow -Fc -f /backups/tronflow_$$(date +%F_%H%M).dump && echo "backup ok $$(date)"
+          find /backups -name 'tronflow_*.dump' -mtime +14 -delete
+          sleep 86400
+        done
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

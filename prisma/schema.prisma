@@ -1,0 +1,243 @@
+// TRON USDT Flow Tracker — схема данных.
+//
+// Ключевые решения:
+//  * Transfer хранит адреса строками (base58), а НЕ внешними ключами на Wallet:
+//    контрагенты отслеживаемых кошельков — это тысячи «чужих» адресов, и
+//    создавать под каждый строку Wallet при ingestion дорого и не нужно.
+//  * Суммы — NUMERIC(38,6): USDT TRC-20 имеет 6 decimals, агрегаты в SQL точные.
+//  * Идемпотентность ingestion — уникальный ключ (txHash, from, to, amount):
+//    per-account API TronGrid не отдаёт event_index, а этот ключ формируется
+//    одинаково из обоих источников (account API и contract events).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WalletCategory {
+  EXCHANGE
+  OTC
+  TRADER
+  WHALE
+  SUSPICIOUS
+  UNKNOWN
+}
+
+enum LabelSource {
+  MANUAL // поставлен пользователем
+  AUTO   // поставлен эвристикой (hub / splitter / transit / cycle)
+}
+
+/// Реестр адресов. isWatched = true — адресная книга (синхронизируется воркером);
+/// false — контрагент, добавленный вручную «раскрытием» узла на графе.
+model Wallet {
+  id       Int            @id @default(autoincrement())
+  address  String         @unique @db.VarChar(34)
+  label    String         @db.VarChar(120)
+  category WalletCategory @default(UNKNOWN)
+  notes    String?
+
+  isWatched Boolean @default(true)
+
+  usdtBalance      Decimal?  @db.Decimal(38, 6)
+  trxBalance       Decimal?  @db.Decimal(38, 6)
+  balanceUpdatedAt DateTime?
+
+  /// Курсор инкрементальной синхронизации «вперёд» (block_timestamp, до которого всё загружено).
+  syncCursor   DateTime?
+  lastSyncedAt DateTime?
+  syncError    String?
+  /// Бэкфилл истории завершён; historyFrom — с какого момента история полная
+  /// (у очень активных адресов история обрезается лимитом BACKFILL_MAX_PAGES).
+  backfilledAt DateTime?
+  historyFrom  DateTime?
+
+  labels    WalletLabel[]
+  snapshots BalanceSnapshot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([isWatched])
+}
+
+/// Произвольные метки/теги («Ереван-центр», «P2P Binance», «HUB» ...).
+model Label {
+  id      Int           @id @default(autoincrement())
+  name    String        @unique @db.VarChar(64)
+  color   String        @default("#64748b") @db.VarChar(9)
+  source  LabelSource   @default(MANUAL)
+  wallets WalletLabel[]
+}
+
+model WalletLabel {
+  walletId  Int
+  labelId   Int
+  wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  label     Label    @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([walletId, labelId])
+}
+
+/// Один USDT Transfer-ивент.
+model Transfer {
+  id             BigInt   @id @default(autoincrement())
+  txHash         String   @db.Char(64)
+  blockNumber    BigInt?
+  blockTimestamp DateTime @db.Timestamptz(3)
+  fromAddress    String   @db.VarChar(34)
+  toAddress      String   @db.VarChar(34)
+  amount         Decimal  @db.Decimal(38, 6)
+  createdAt      DateTime @default(now())
+
+  @@unique([txHash, fromAddress, toAddress, amount])
+  @@index([fromAddress, blockTimestamp])
+  @@index([toAddress, blockTimestamp])
+  @@index([blockTimestamp])
+}
+
+/// История балансов — для графиков изменения ликвидности.
+model BalanceSnapshot {
+  id       BigInt   @id @default(autoincrement())
+  walletId Int
+  wallet   Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  usdt     Decimal  @db.Decimal(38, 6)
+  trx      Decimal? @db.Decimal(38, 6)
+  takenAt  DateTime @default(now())
+
+  @@index([walletId, takenAt])
+}
+
+/// Курсоры фоновых процессов (например, позиция firehose по контракту USDT).
+model SyncState {
+  key       String   @id @db.VarChar(64)
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+enum JobType {
+  SYNC    // догрузить историю / новые переводы отслеживаемого кошелька
+  EXPAND  // подтянуть связи контрагента (2-я степень на графе)
+  BALANCE // обновить баланс
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// Очередь задач для воркера: веб-процесс не ходит в TronGrid сам —
+/// один потребитель, один rate limit, один учёт суточного лимита запросов.
+model Job {
+  id         Int       @id @default(autoincrement())
+  type       JobType
+  address    String    @db.VarChar(34)
+  status     JobStatus @default(PENDING)
+  result     Json?
+  error      String?
+  createdAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Уведомления в Telegram
+// ---------------------------------------------------------------------------
+
+enum AlertType {
+  WHALE            // одиночный перевод выше порога
+  VOLUME_SPIKE     // объём за окно выше средней нормы на X %
+  NEW_COUNTERPARTY // первый перевод с/на адрес, которого ещё не было в базе
+  PATTERN          // найден новый паттерн (fan-in / fan-out / кольцо)
+}
+
+/// Правило уведомления. Параметры зависят от типа (см. src/lib/alerts/rules.ts).
+model AlertRule {
+  id         Int       @id @default(autoincrement())
+  type       AlertType
+  name       String    @db.VarChar(120)
+  enabled    Boolean   @default(true)
+  /// { minAmount?, windowMin?, spikePct?, minVolume?, baselineDays?, patternTypes? }
+  params     Json
+  /// Область: пусто = вся адресная книга; иначе список категорий и/или адресов
+  categories String[]  @default([])
+  addresses  String[]  @default([])
+  /// Не чаще одного уведомления на ключ за это время (для всплесков)
+  cooldownMin Int      @default(60)
+  events     AlertEvent[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+enum AlertStatus {
+  SENT
+  FAILED
+  SKIPPED // Telegram не настроен — событие сохранено только в журнале
+}
+
+/// Журнал сработавших уведомлений; dedupeKey не даёт отправить одно событие дважды.
+model AlertEvent {
+  id        BigInt      @id @default(autoincrement())
+  ruleId    Int
+  rule      AlertRule   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  dedupeKey String      @db.VarChar(200)
+  title     String      @db.VarChar(200)
+  message   String
+  status    AlertStatus
+  error     String?
+  createdAt DateTime    @default(now())
+
+  @@unique([ruleId, dedupeKey])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Найденные паттерны (предложения для авто-разметки)
+// ---------------------------------------------------------------------------
+
+enum PatternType {
+  FAN_OUT
+  FAN_IN
+  LOOP
+}
+
+enum FindingStatus {
+  NEW
+  APPLIED   // метка поставлена на кошельки
+  DISMISSED // аналитик отклонил
+}
+
+model PatternFinding {
+  id         Int           @id @default(autoincrement())
+  type       PatternType
+  /// Стабильный ключ (тип + адреса) — повторный скан обновляет находку, а не дублирует
+  key        String        @unique @db.VarChar(300)
+  /// Главный адрес (для кольца — все участники в addresses)
+  address    String        @db.VarChar(34)
+  addresses  String[]
+  score      Float
+  summary    String
+  metrics    Json
+  status     FindingStatus @default(NEW)
+  firstSeen  DateTime      @default(now())
+  lastSeen   DateTime      @default(now())
+
+  @@index([status, score])
+}
+
+/// Настройки, которые меняются из интерфейса (например, chat id для Telegram).
+model AppSetting {
+  key       String   @id @db.VarChar(64)
+  value     String
+  updatedAt DateTime @updatedAt
+}

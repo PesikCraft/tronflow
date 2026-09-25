@@ -1,0 +1,240 @@
+@import "tailwindcss";
+
+/*
+ * TRON Flow — пульт аналитика потоков USDT.
+ *
+ * Палитра: «чернильный петроль» (тёмная) / «минеральная бумага» (светлая).
+ * Бирюза Tether (--brand) — только знак и индикатор живого потока; действия — «чернилами».
+ * Данные: приток — тёплый, отток — холодный (они же — давление продаж/покупок).
+ * Категории цветом — только обменник/OTC/кит (тройка, проверенная на различимость во всех парах);
+ * остальные — нейтральный цвет + форма узла. Статусные цвета — только с иконкой и текстом.
+ */
+:root {
+  color-scheme: light;
+  --bg: #eef2f1;
+  --surface: #fafcfb;
+  --surface-2: #e3eae8;
+  --line: rgba(15, 28, 33, 0.12);
+  --line-strong: rgba(15, 28, 33, 0.28);
+  --grid: #dbe3e1;
+  --axis: #b7c4c1;
+  --fg: #0f1c21;
+  --fg-2: #43555a;
+  --muted: #6e7f7b;
+  --ink: #0f1c21; /* основная кнопка */
+  --ink-fg: #f4f8f7;
+  --brand: #168a66;
+  --focus: #168a66;
+
+  --flow-in: #eb6834; /* приток на рынок = продажи USDT */
+  --flow-out: #2a78d6; /* отток с рынка = покупки USDT */
+  --flow-in-soft: #f6c3ad;
+  --flow-out-soft: #b5d0f0;
+  --neutral-mid: #cfd8d6;
+  --series: #3b6f7c; /* одиночный ряд без смысла направления (объём, баланс) */
+
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+
+  --cat-exchange: #2a78d6;
+  --cat-otc: #eb6834;
+  --cat-whale: #1baf7a;
+  --cat-trader: #6e7f7b;
+  --cat-suspicious: #6e7f7b;
+  --cat-unknown: #a3b1ae;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0c1a1f;
+    --surface: #12232a;
+    --surface-2: #1a2e36;
+    --line: rgba(214, 235, 230, 0.1);
+    --line-strong: rgba(214, 235, 230, 0.24);
+    --grid: #1f343c;
+    --axis: #2f4a53;
+    --fg: #e9f1ef;
+    --fg-2: #a9bab6;
+    --muted: #7c8f8a;
+    --ink: #e9f1ef;
+    --ink-fg: #0c1a1f;
+    --brand: #2fb58c;
+    --focus: #2fb58c;
+    --flow-in: #d95926;
+    --flow-out: #3987e5;
+    --flow-in-soft: #5a3524;
+    --flow-out-soft: #203d5e;
+    --neutral-mid: #2c4148;
+    --series: #7fb6c2;
+    --good-text: #0ca30c;
+    --cat-exchange: #3987e5;
+    --cat-otc: #d95926;
+    --cat-whale: #199e70;
+    --cat-trader: #8fa29d;
+    --cat-suspicious: #8fa29d;
+    --cat-unknown: #5d716c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c1a1f;
+  --surface: #12232a;
+  --surface-2: #1a2e36;
+  --line: rgba(214, 235, 230, 0.1);
+  --line-strong: rgba(214, 235, 230, 0.24);
+  --grid: #1f343c;
+  --axis: #2f4a53;
+  --fg: #e9f1ef;
+  --fg-2: #a9bab6;
+  --muted: #7c8f8a;
+  --ink: #e9f1ef;
+  --ink-fg: #0c1a1f;
+  --brand: #2fb58c;
+  --focus: #2fb58c;
+  --flow-in: #d95926;
+  --flow-out: #3987e5;
+  --flow-in-soft: #5a3524;
+  --flow-out-soft: #203d5e;
+  --neutral-mid: #2c4148;
+  --series: #7fb6c2;
+  --good-text: #0ca30c;
+  --cat-exchange: #3987e5;
+  --cat-otc: #d95926;
+  --cat-whale: #199e70;
+  --cat-trader: #8fa29d;
+  --cat-suspicious: #8fa29d;
+  --cat-unknown: #5d716c;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-ink: var(--ink);
+  --color-ink-fg: var(--ink-fg);
+  --color-brand: var(--brand);
+  --color-good: var(--good-text);
+  --color-warning: var(--warning);
+  --color-critical: var(--critical);
+  --color-flow-in: var(--flow-in);
+  --color-flow-out: var(--flow-out);
+  --font-sans: "Golos Text Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Unbounded Variable", "Golos Text Variable", system-ui, sans-serif;
+
+  /* Шкала 1.25 от 14 px */
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5625rem;
+  --text-2xl: 1.953rem;
+  --text-3xl: 2.441rem;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  font-feature-settings: "tnum" 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Цифры в таблицах и показателях — табличные, чтобы разряды стояли столбиком */
+.num,
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.addr {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Элементы форм и действия — в слое components, чтобы утилиты (pl-8, w-full…) их переопределяли */
+@layer components {
+.input {
+  @apply border-line bg-surface text-fg placeholder:text-muted rounded-md border px-2.5 py-1.5 text-sm outline-none focus:border-(--line-strong);
+}
+.btn {
+  @apply border-line bg-surface text-fg hover:bg-surface-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50;
+}
+.btn-primary {
+  @apply bg-ink text-ink-fg inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+}
+.link {
+  @apply text-fg underline decoration-(--line-strong) underline-offset-2 hover:decoration-(--fg);
+}
+
+/* Панели: иерархия через поверхность и линию, без теней */
+.card {
+  @apply border-line bg-surface relative rounded-[10px] border; /* relative — скрытые подписи sr-only остаются внутри прокрутки */
+}
+.panel-title {
+  @apply text-fg text-sm font-semibold;
+}
+
+}
+
+/* Живой индикатор: единственная постоянная анимация — сигнал, что поток идёт */
+@keyframes live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--brand) 0%, transparent);
+  }
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--brand);
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+.live-dot[data-state="stale"] {
+  background: var(--serious);
+  animation: none;
+}
+.live-dot[data-state="down"] {
+  background: var(--critical);
+  animation: none;
+}

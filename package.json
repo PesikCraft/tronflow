@@ -1,0 +1,51 @@
+{
+  "name": "tron-flow-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start -H ${HOST:-127.0.0.1} -p ${PORT:-3000}",
+    "worker": "tsx worker/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 tests/integration/*.test.ts",
+    "smoke:tron": "tsx scripts/smoke-tron.ts",
+    "db:migrate": "prisma migrate deploy",
+    "postinstall": "prisma generate",
+    "build:worker": "esbuild worker/index.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist/worker.mjs",
+    "start:render": "bash scripts/start-render.sh"
+  },
+  "dependencies": {
+    "@fontsource-variable/golos-text": "^5.3.0",
+    "@fontsource-variable/unbounded": "^5.3.0",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "cytoscape": "^3.34.3",
+    "cytoscape-fcose": "^2.2.0",
+    "dotenv": "^18.0.3",
+    "esbuild": "0.28.2",
+    "lucide-react": "^1.48.0",
+    "next": "^16.3.6",
+    "pg": "^8.23.0",
+    "prisma": "^7.10.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/cytoscape": "^3.21.9",
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}
