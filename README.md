@@ -162,6 +162,7 @@ pg_restore --clean --if-exists --no-owner -d tronflow ~/tronflow-backups/tronflo
 | `TELEGRAM_BOT_TOKEN` | пусто | токен бота от @BotFather; чат выбирается в разделе «Уведомления» |
 | `DASHBOARD_URL` | http://127.0.0.1:3000 | адрес дашборда для ссылок в сообщениях (для телефона — IP Mac в сети) |
 | `PATTERN_SCAN_MIN` / `PATTERN_SCAN_DAYS` | 60 / 7 | как часто и за сколько дней искать паттерны |
+| `PATTERN_SCAN_MAX_ROWS` | 100000 | сколько последних переводов читает скан (≈ 40 МБ памяти на 100 тыс.) |
 
 После изменения `.env`: `launchctl kickstart -k` для web и worker.
 

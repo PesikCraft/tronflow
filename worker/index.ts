@@ -17,6 +17,7 @@ import { env } from "../src/lib/env";
 import {
   addUsage,
   backfillWallet,
+  getState,
   pendingBackfills,
   pollDueWallets,
   processJobs,
@@ -76,6 +77,16 @@ let lastPatternScan = 0;
 let lastPrune = 0;
 let lastKeepalive = 0;
 
+/** Время начала последнего скана паттернов — переживает перезапуск воркера. */
+const PATTERN_ATTEMPT_KEY = "pattern_scan_attempt";
+
+/**
+ * Кошельки, чья история не загрузилась: повтор через 15 мин, 30, 1 ч … до 6 ч.
+ * Без паузы такой кошелёк перебирался бы каждый тик, занимал очередь и тратил лимит TronGrid.
+ */
+const backfillFailures = new Map<string, { count: number; retryAt: number }>();
+const BACKFILL_SLOTS = 2;
+
 async function tick() {
   const e = env();
   const used = await usageToday();
@@ -90,11 +101,22 @@ async function tick() {
   let backfills = 0;
   if (!overBudget) {
     const fresh: string[] = [];
-    for (const w of await pendingBackfills(2)) {
+    const due = (await pendingBackfills(50))
+      .filter((w) => (backfillFailures.get(w.address)?.retryAt ?? 0) <= Date.now())
+      .slice(0, BACKFILL_SLOTS);
+    for (const w of due) {
       const r = await backfillWallet(w.address);
       backfills++;
       fresh.push(w.address);
-      log(r.error ? "error" : "info", "backfill", { ...r });
+      if (r.error) {
+        const count = (backfillFailures.get(w.address)?.count ?? 0) + 1;
+        const delay = Math.min(6 * 3_600_000, 15 * 60_000 * 2 ** (count - 1));
+        backfillFailures.set(w.address, { count, retryAt: Date.now() + delay });
+        log("error", "backfill", { ...r, retryInMin: delay / 60_000 });
+      } else {
+        backfillFailures.delete(w.address);
+        log("info", "backfill", { ...r });
+      }
     }
     // Баланс нового кошелька — сразу, а не после догонки потока (без ключа это минуты)
     if (fresh.length) await refreshBalances(fresh);
@@ -118,6 +140,9 @@ async function tick() {
   let patterns: Record<string, unknown> | undefined;
   if (Date.now() - lastPatternScan >= e.PATTERN_SCAN_MIN * 60_000) {
     lastPatternScan = Date.now();
+    // Отметка до скана: если воркер упадёт посреди него (например, от нехватки памяти),
+    // после перезапуска скан не запустится сразу снова и не уронит его по кругу
+    await setState(PATTERN_ATTEMPT_KEY, String(lastPatternScan));
     patterns = { ...(await scanAndStore(e.PATTERN_SCAN_DAYS)) };
     log("info", "pattern scan", patterns);
   }
@@ -147,6 +172,7 @@ async function main() {
   const e = env(); // падаем сразу при кривом .env
   const lock = await acquireLock();
   await requeueStaleJobs();
+  lastPatternScan = Number(await getState(PATTERN_ATTEMPT_KEY)) || 0;
   // Отметка сразу при старте: первый цикл (догонка сети) может идти минуту и дольше
   await setState("worker_status", JSON.stringify({ at: Date.now(), mode: e.INGEST_MODE, starting: true, ingest: {} }));
   log("info", "worker started", { mode: e.INGEST_MODE, tickSec: e.WORKER_TICK_SEC, apiKey: Boolean(e.TRONGRID_API_KEY) });

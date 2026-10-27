@@ -74,6 +74,19 @@ function explain(code?: number, description?: string) {
   return `Telegram: ${description ?? `ошибка ${code ?? "сети"}`}`;
 }
 
+/** Лимит Telegram — 4096 символов; берём с запасом. */
+export const MESSAGE_LIMIT = 4000;
+
+/**
+ * Обрезка по границе строки: каждая строка сообщения сама закрывает свои теги,
+ * а сообщение с оборванным тегом Telegram отклоняет целиком.
+ */
+export function fitMessage(html: string) {
+  if (html.length <= MESSAGE_LIMIT) return html;
+  const cut = html.lastIndexOf("\n", MESSAGE_LIMIT - 2);
+  return cut > 0 ? html.slice(0, cut) + "\n…" : html.slice(0, MESSAGE_LIMIT - 10) + "…";
+}
+
 /** Отправка с паузой ≥ 1,1 с между сообщениями (лимит Telegram ~1 сообщение в секунду на чат). */
 export async function sendTelegram(html: string, chatId?: string | null) {
   const chat = chatId ?? (await telegramChatId());
@@ -83,7 +96,7 @@ export async function sendTelegram(html: string, chatId?: string | null) {
   nextSendAt = Date.now() + 1100;
   await call("sendMessage", {
     chat_id: chat,
-    text: html.length > 4000 ? html.slice(0, 3990) + "…" : html,
+    text: fitMessage(html),
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
   });

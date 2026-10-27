@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { digestMessage, whaleMessage, spikeMessage } from "../src/lib/alerts/messages";
 import { describeRule, parseParams } from "../src/lib/alerts/rules";
 import { computePressure } from "../src/lib/liquidity";
+import { fitMessage } from "../src/lib/telegram";
 
 const tx = { txHash: "ab".repeat(32), from: "TFrom000000000000000000000000000001", to: "TTo00000000000000000000000000000002", amount: 25_000.4, ts: Date.UTC(2026, 8, 24, 15, 46) };
 
@@ -29,6 +30,17 @@ test("spike message and digest", () => {
   const d = digestMessage("Кит", "🐋", Array.from({ length: 14 }, (_, i) => `line ${i}`), 14);
   assert.match(d, /14 событий/);
   assert.match(d, /…и ещё 4/);
+});
+
+test("long digest fits Telegram limit without cutting a tag", () => {
+  const long = `<a href="https://tronscan.org/#/transaction/${"ab".repeat(32)}">${"Очень длинное имя ".repeat(25)}</a>`;
+  const d = digestMessage("Кит", "🐋", Array.from({ length: 10 }, () => long), 10);
+  assert.ok(d.length <= 4000);
+  assert.equal((d.match(/<a /g) ?? []).length, (d.match(/<\/a>/g) ?? []).length);
+  assert.match(d, /…и ещё \d+/);
+  const fitted = fitMessage(["<b>x</b>", ...Array.from({ length: 30 }, () => long)].join("\n"));
+  assert.ok(fitted.length <= 4000);
+  assert.equal((fitted.match(/<a /g) ?? []).length, (fitted.match(/<\/a>/g) ?? []).length);
 });
 
 test("rule params validation and description", () => {

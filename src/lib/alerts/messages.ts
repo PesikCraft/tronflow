@@ -1,5 +1,5 @@
 /** Шаблоны сообщений Telegram (HTML parse_mode). Чистые функции — покрыты тестами. */
-import { escapeHtml as e } from "../telegram";
+import { escapeHtml as e, MESSAGE_LIMIT } from "../telegram";
 
 const TZ = "Asia/Yerevan";
 const n = (v: number) => Math.round(v).toLocaleString("ru-RU").replace(/ /g, " ");
@@ -93,14 +93,17 @@ export function patternMessage(
 
 /** Сводка, когда за один цикл сработало много событий одного правила — не засыпаем чат. */
 export function digestMessage(ruleName: string, icon: string, items: string[], total: number) {
-  const shown = items.slice(0, 10);
-  return [
-    `${icon} <b>${e(ruleName)}: ${total} событий</b>`,
-    ...shown.map((s) => `• ${s}`),
-    total > shown.length ? `…и ещё ${total - shown.length}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const header = `${icon} <b>${e(ruleName)}: ${total} событий</b>`;
+  // До 10 строк и не длиннее лимита Telegram (запас — на строку «…и ещё N»)
+  const shown: string[] = [];
+  let length = header.length;
+  for (const s of items.slice(0, 10)) {
+    const line = `• ${s}`;
+    if (length + 1 + line.length > MESSAGE_LIMIT - 40) break;
+    shown.push(line);
+    length += 1 + line.length;
+  }
+  return [header, ...shown, total > shown.length ? `…и ещё ${total - shown.length}` : ""].filter(Boolean).join("\n");
 }
 
 export function digestLine(t: TransferInfo, labels: Labels, ctx: LinkCtx) {

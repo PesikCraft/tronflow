@@ -23,6 +23,8 @@ const coreSchema = z.object({
   /** Скан паттернов: как часто и за сколько дней */
   PATTERN_SCAN_MIN: num(60),
   PATTERN_SCAN_DAYS: num(7),
+  /** Сколько последних переводов читает скан: 100k ≈ 40 МБ памяти, на Render у воркера всего 160 МБ */
+  PATTERN_SCAN_MAX_ROWS: num(100_000),
   /** Адрес дашборда для ссылок в Telegram, например http://192.168.1.20:3000 */
   DASHBOARD_URL: z.string().default(""),
   TELEGRAM_BOT_TOKEN: z.string().default(""),

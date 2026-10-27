@@ -1,15 +1,15 @@
 /** Скан паттернов по БД и работа с находками (применить метку / отклонить). */
 import { prisma } from "../db";
+import { env } from "../env";
 import type { FlowTransfer } from "../graph/types";
 import { DEFAULT_DETECT_CONFIG, scanPatterns, type DetectConfig } from "./detect";
-
-/** Больше строк скан не читает — защита памяти; самые свежие переводы важнее. */
-const MAX_ROWS = 300_000;
 
 export const PATTERN_TAG = { FAN_OUT: "рассылка", FAN_IN: "сбор", LOOP: "кольцо" } as const;
 
 export async function loadTransfers(days: number): Promise<{ transfers: FlowTransfer[]; truncated: boolean }> {
-  const rows = await prisma.$queryRaw<{ txHash: string; from: string; to: string; amount: number; ts: number }[]>`
+  // Больше строк скан не читает — защита памяти; самые свежие переводы важнее.
+  const MAX_ROWS = env().PATTERN_SCAN_MAX_ROWS;
+  const rows = await prisma.$queryRaw<{ txHash: string; from: string; to: string; amount: number; ts: number }[]>
     SELECT "txHash", "fromAddress" AS "from", "toAddress" AS "to", amount::float8 AS amount,
            (extract(epoch FROM "blockTimestamp") * 1000)::float8 AS ts
     FROM "Transfer"
