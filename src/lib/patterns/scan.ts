@@ -9,7 +9,7 @@ export const PATTERN_TAG = { FAN_OUT: "рассылка", FAN_IN: "сбор", LO
 export async function loadTransfers(days: number): Promise<{ transfers: FlowTransfer[]; truncated: boolean }> {
   // Больше строк скан не читает — защита памяти; самые свежие переводы важнее.
   const MAX_ROWS = env().PATTERN_SCAN_MAX_ROWS;
-  const rows = await prisma.$queryRaw<{ txHash: string; from: string; to: string; amount: number; ts: number }[]>
+  const rows = await prisma.$queryRaw<{ txHash: string; from: string; to: string; amount: number; ts: number }[]>`
     SELECT "txHash", "fromAddress" AS "from", "toAddress" AS "to", amount::float8 AS amount,
            (extract(epoch FROM "blockTimestamp") * 1000)::float8 AS ts
     FROM "Transfer"
