@@ -1,7 +1,8 @@
 /** Параметры правил уведомлений по типам — общая схема для API, интерфейса и движка. */
 import { z } from "zod";
+import { assetLabel, NEWS_ASSETS } from "../news/classify";
 
-export const ALERT_TYPES = ["WHALE", "VOLUME_SPIKE", "NEW_COUNTERPARTY", "PATTERN"] as const;
+export const ALERT_TYPES = ["WHALE", "VOLUME_SPIKE", "NEW_COUNTERPARTY", "PATTERN", "NEWS"] as const;
 export type AlertTypeName = (typeof ALERT_TYPES)[number];
 
 export const PATTERN_TYPES = ["FAN_OUT", "FAN_IN", "LOOP"] as const;
@@ -19,6 +20,11 @@ export const paramsSchema = {
     patternTypes: z.array(z.enum(PATTERN_TYPES)).min(1),
     minScore: z.coerce.number().min(0).max(1),
   }),
+  NEWS: z.object({
+    minImpact: z.coerce.number().int().min(1).max(10),
+    /** пусто — новости по любым монетам */
+    assets: z.array(z.enum(NEWS_ASSETS)).default([]),
+  }),
 } as const;
 
 export type RuleParams<T extends AlertTypeName> = z.infer<(typeof paramsSchema)[T]>;
@@ -28,6 +34,7 @@ export const DEFAULT_PARAMS: { [T in AlertTypeName]: RuleParams<T> } = {
   NEW_COUNTERPARTY: { minAmount: 5_000 },
   VOLUME_SPIKE: { windowMin: 30, spikePct: 100, minVolume: 10_000, baselineDays: 7 },
   PATTERN: { patternTypes: ["FAN_OUT", "FAN_IN", "LOOP"], minScore: 0.6 },
+  NEWS: { minImpact: 7, assets: [] },
 };
 
 export const TYPE_INFO: Record<AlertTypeName, { title: string; description: string }> = {
@@ -41,6 +48,10 @@ export const TYPE_INFO: Record<AlertTypeName, { title: string; description: stri
     description: "Первый перевод с адреса или на адрес, которого ещё не было в базе.",
   },
   PATTERN: { title: "Новый паттерн", description: "Скан нашёл рассылку, сбор мелочи или кольцо переводов." },
+  NEWS: {
+    title: "Важная новость",
+    description: "Новость с важностью не ниже порога. Оценка — по словарям: подсказка, а не прогноз цены.",
+  },
 };
 
 export function parseParams(type: AlertTypeName, params: unknown) {
@@ -65,6 +76,10 @@ export function describeRule(type: AlertTypeName, params: unknown): string {
       const d = p.data as RuleParams<"PATTERN">;
       const names = { FAN_OUT: "рассылка", FAN_IN: "сбор", LOOP: "кольцо" };
       return `${d.patternTypes.map((t) => names[t]).join(", ")}; уверенность от ${Math.round(d.minScore * 100)} %`;
+    }
+    case "NEWS": {
+      const d = p.data as RuleParams<"NEWS">;
+      return `важность от ${d.minImpact} из 10; ${d.assets.length ? d.assets.map(assetLabel).join(", ") : "любые монеты"}`;
     }
   }
 }

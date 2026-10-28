@@ -349,10 +349,11 @@ export async function requeueStaleJobs() {
 
 /**
  * Очистка старых данных, чтобы база не выросла за лимит бесплатного тарифа.
- * Переводы и снимки балансов старше retentionDays удаляются; журнал уведомлений — старше 60 дней.
+ * Переводы и снимки балансов старше retentionDays удаляются; журнал уведомлений — старше 60 дней,
+ * новости — старше 30 дней.
  */
 export async function pruneOldData(retentionDays: number) {
-  const result = { transfers: 0, snapshots: 0, alertEvents: 0 };
+  const result = { transfers: 0, snapshots: 0, alertEvents: 0, news: 0 };
   if (retentionDays > 0) {
     const cutoff = new Date(Date.now() - retentionDays * 86_400_000);
     // Пачками, чтобы не держать долгую блокировку таблицы
@@ -370,6 +371,7 @@ export async function pruneOldData(retentionDays: number) {
   result.alertEvents = (
     await prisma.alertEvent.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 60 * 86_400_000) } } })
   ).count;
+  result.news = (await prisma.newsItem.deleteMany({ where: { publishedAt: { lt: new Date(Date.now() - 30 * 86_400_000) } } })).count;
   return result;
 }
 

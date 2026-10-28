@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { ALERT_TYPES, DEFAULT_PARAMS, PATTERN_TYPES, TYPE_INFO, type AlertTypeName } from "@/lib/alerts/rules";
 import { CATEGORIES, CATEGORY_LABEL, fmtAgo } from "@/lib/format";
+import { assetLabel, NEWS_ASSETS } from "@/lib/news/classify";
 
 interface Rule {
   id: number;
@@ -137,30 +138,52 @@ function RuleForm({ initial, onSave, onCancel }: { initial: Draft; onSave: (d: D
             <NumberField label="Уверенность от" value={p.minScore} onChange={(v) => setP("minScore", v)} suffix="(0–1)" step={0.05} />
           </>
         )}
+        {d.type === "NEWS" && (
+          <>
+            <NumberField label="Важность от" value={p.minImpact} onChange={(v) => setP("minImpact", v)} suffix="из 10" />
+            <fieldset className="flex flex-col gap-1">
+              <legend className="text-fg-2 text-xs">По каким монетам. Ничего не выбрано — любые</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+                {NEWS_ASSETS.map((a) => {
+                  const list = (p.assets as string[]) ?? [];
+                  return (
+                    <label key={a} className="flex items-center gap-1.5 text-sm">
+                      <input type="checkbox" checked={list.includes(a)} onChange={(e) => setP("assets", e.target.checked ? [...list, a] : list.filter((x) => x !== a))} />
+                      {assetLabel(a)}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          </>
+        )}
       </div>
 
-      <fieldset>
-        <legend className="text-fg-2 text-xs">Для каких кошельков. Ничего не выбрано — вся адресная книга</legend>
-        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
-          {CATEGORIES.map((c) => (
-            <label key={c} className="flex items-center gap-1.5 text-sm">
-              <input
-                type="checkbox"
-                checked={d.categories.includes(c)}
-                onChange={(e) => setD({ ...d, categories: e.target.checked ? [...d.categories, c] : d.categories.filter((x) => x !== c) })}
-              />
-              {CATEGORY_LABEL[c]}
-            </label>
-          ))}
-        </div>
-        <textarea
-          className="input addr mt-2 h-16 w-full text-xs"
-          placeholder="и/или конкретные адреса, по одному в строке"
-          value={addresses}
-          onChange={(e) => setAddresses(e.target.value)}
-          spellCheck={false}
-        />
-      </fieldset>
+      {/* Новости к кошелькам не привязаны */}
+      {d.type !== "NEWS" && (
+        <fieldset>
+          <legend className="text-fg-2 text-xs">Для каких кошельков. Ничего не выбрано — вся адресная книга</legend>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
+            {CATEGORIES.map((c) => (
+              <label key={c} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={d.categories.includes(c)}
+                  onChange={(e) => setD({ ...d, categories: e.target.checked ? [...d.categories, c] : d.categories.filter((x) => x !== c) })}
+                />
+                {CATEGORY_LABEL[c]}
+              </label>
+            ))}
+          </div>
+          <textarea
+            className="input addr mt-2 h-16 w-full text-xs"
+            placeholder="и/или конкретные адреса, по одному в строке"
+            value={addresses}
+            onChange={(e) => setAddresses(e.target.value)}
+            spellCheck={false}
+          />
+        </fieldset>
+      )}
 
       {error && (
         <p role="alert" className="text-critical text-sm">

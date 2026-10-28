@@ -159,6 +159,7 @@ enum AlertType {
   VOLUME_SPIKE     // объём за окно выше средней нормы на X %
   NEW_COUNTERPARTY // первый перевод с/на адрес, которого ещё не было в базе
   PATTERN          // найден новый паттерн (fan-in / fan-out / кольцо)
+  NEWS             // новость с важностью не ниже порога
 }
 
 /// Правило уведомления. Параметры зависят от типа (см. src/lib/alerts/rules.ts).
@@ -240,4 +241,40 @@ model AppSetting {
   key       String   @id @db.VarChar(64)
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Новости из RSS-лент (src/lib/news)
+// ---------------------------------------------------------------------------
+
+enum NewsSentiment {
+  BULLISH
+  BEARISH
+  NEUTRAL
+}
+
+/// Новость с разбором по словарям: монеты, направление, важность и объяснение оценки.
+model NewsItem {
+  id          Int           @id @default(autoincrement())
+  /// Нормализованный заголовок — для поиска дублей за последние 48 часов (не уникален)
+  key         String        @db.VarChar(200)
+  /// Лента, где новость появилась первой; sources — все ленты, которые её подхватили
+  source      String        @db.VarChar(40)
+  sources     String[]      @default([])
+  title       String        @db.VarChar(500)
+  url         String        @db.VarChar(1000)
+  summary     String?
+  publishedAt DateTime
+  /// BTC, ETH, XRP … и MARKET — макро и регуляторика, касающиеся всего рынка
+  assets      String[]      @default([])
+  sentiment   NewsSentiment
+  /// −1…1: знак — направление, модуль — насколько однозначно
+  score       Float
+  /// Важность 1–10
+  impact      Int
+  /// Сработавшие правила — объяснение оценки
+  reasons     String[]      @default([])
+  createdAt   DateTime      @default(now())
+
+  @@index([publishedAt])
 }

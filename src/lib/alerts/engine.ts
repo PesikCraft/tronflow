@@ -2,7 +2,8 @@
  * Движок уведомлений. Вызывается воркером каждый тик:
  *   1. новые «живые» переводы (не старше LIVE_WINDOW) -> правила WHALE и NEW_COUNTERPARTY;
  *   2. скользящее окно объёма -> VOLUME_SPIKE (не чаще cooldownMin);
- *   3. новые находки сканера паттернов -> PATTERN.
+ *   3. новые находки сканера паттернов -> PATTERN;
+ *   4. новые новости с важностью не ниже порога -> NEWS.
  * Каждое событие пишется в AlertEvent с уникальным dedupeKey — повторов не бывает,
  * даже если воркер перезапустился посреди отправки.
  */
@@ -14,6 +15,8 @@ import {
   digestLine,
   digestMessage,
   newCounterpartyMessage,
+  newsDigestLine,
+  newsMessage,
   patternMessage,
   spikeMessage,
   whaleMessage,
@@ -26,6 +29,9 @@ import { parseParams, type AlertTypeName, type RuleParams } from "./rules";
 const LIVE_WINDOW_MS = 20 * 60_000;
 const TRANSFER_CURSOR = "alerts_transfer_cursor";
 const PATTERN_CURSOR = "alerts_pattern_cursor";
+const NEWS_CURSOR = "alerts_news_cursor";
+/** Новости старше этого (вышли, пока воркер стоял) — без уведомления. */
+const NEWS_LIVE_WINDOW_MS = 6 * 3_600_000;
 /** Больше событий одного правила за цикл — одна сводка вместо пачки сообщений. */
 const DIGEST_THRESHOLD = 5;
 
@@ -193,6 +199,33 @@ export async function runAlerts(opts: { send?: Sender; now?: Date } = {}): Promi
     await setState(PATTERN_CURSOR, now.toISOString());
   }
 
+  // --- 4. Новости -------------------------------------------------------------------
+  // Курсор двигается всегда, даже без правил: новое правило не должно разослать архив.
+  const newsRules = rules.filter((r) => r.type === "NEWS");
+  const newsCursor = await getState(NEWS_CURSOR);
+  const maxNewsId = (await prisma.newsItem.aggregate({ _max: { id: true } }))._max.id ?? 0;
+  if (newsCursor !== null && newsRules.length) {
+    const items = await prisma.newsItem.findMany({
+      where: { id: { gt: Number(newsCursor), lte: maxNewsId }, publishedAt: { gte: new Date(now.getTime() - NEWS_LIVE_WINDOW_MS) } },
+      orderBy: { impact: "desc" },
+    });
+    for (const rule of newsRules) {
+      const p = parseParams("NEWS", rule.params) as RuleParams<"NEWS">;
+      for (const nw of items) {
+        if (nw.impact < p.minImpact) continue;
+        if (p.assets.length && !nw.assets.some((a) => (p.assets as string[]).includes(a))) continue;
+        pending.push({
+          rule,
+          dedupeKey: `news:${nw.id}`,
+          title: nw.title.slice(0, 190),
+          message: newsMessage(nw, rule.name, ctx),
+          digestLine: newsDigestLine(nw),
+        });
+      }
+    }
+  }
+  await setState(NEWS_CURSOR, String(maxNewsId));
+
   return deliver(pending, opts.send);
 }
 
@@ -236,7 +269,7 @@ export async function measureSpike(scope: string[], p: RuleParams<"VOLUME_SPIKE"
   return { current: row.current, baseline, count: row.n, top };
 }
 
-const ICON: Record<string, string> = { WHALE: "🐋", NEW_COUNTERPARTY: "🆕", VOLUME_SPIKE: "📈", PATTERN: "🔍" };
+const ICON: Record<string, string> = { WHALE: "🐋", NEW_COUNTERPARTY: "🆕", VOLUME_SPIKE: "📈", PATTERN: "🔍", NEWS: "📰" };
 
 /** Сохраняет события (без дублей) и отправляет: по одному сообщению или сводкой. */
 async function deliver(pending: PendingEvent[], send?: Sender): Promise<AlertRunResult> {

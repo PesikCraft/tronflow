@@ -109,3 +109,33 @@ export function digestMessage(ruleName: string, icon: string, items: string[], t
 export function digestLine(t: TransferInfo, labels: Labels, ctx: LinkCtx) {
   return `${n(t.amount)} USDT: ${party(t.from, labels.get(t.from), ctx)} → ${party(t.to, labels.get(t.to), ctx)} (<a href="${tronTx(t.txHash)}">tx</a>)`;
 }
+
+export interface NewsInfo {
+  title: string;
+  url: string;
+  sources: string[];
+  assets: string[];
+  sentiment: "BULLISH" | "BEARISH" | "NEUTRAL";
+  impact: number;
+  reasons: string[];
+  publishedAt: Date;
+}
+
+const DIRECTION = { BULLISH: "🟢 к росту", BEARISH: "🔴 к падению", NEUTRAL: "⚪️ нейтрально" } as const;
+const assetsText = (a: string[]) => a.map((x) => (x === "MARKET" ? "рынок" : x)).join(", ");
+
+export function newsMessage(nw: NewsInfo, ruleName: string, ctx: LinkCtx) {
+  const meta = [DIRECTION[nw.sentiment], `важность ${nw.impact}/10`, nw.assets.length ? assetsText(nw.assets) : ""].filter(Boolean);
+  const lines = [
+    `📰 <b>${e(nw.title)}</b>`,
+    `${meta.join(" · ")} — ${e(ruleName)}`,
+    nw.reasons.length ? `Почему: ${e(nw.reasons.join(", "))}` : "",
+    `${e(nw.sources.join(", "))} · ${time(nw.publishedAt)} по Еревану · <a href="${e(nw.url)}">читать</a>`,
+  ];
+  if (ctx.dashboardUrl) lines.push(`<a href="${ctx.dashboardUrl}/news">Все новости</a>`);
+  return lines.filter(Boolean).join("\n");
+}
+
+export function newsDigestLine(nw: NewsInfo) {
+  return `${DIRECTION[nw.sentiment].split(" ")[0]} ${nw.impact}/10 <a href="${e(nw.url)}">${e(nw.title)}</a>`;
+}

@@ -7,7 +7,7 @@
  *   2. бэкфилл истории новых кошельков
  *   3. новые переводы: firehose (по умолчанию) или poll
  *   4. балансы кошельков, у которых были переводы, + плановый проход
- *   5. скан паттернов (раз в PATTERN_SCAN_MIN) и уведомления в Telegram
+ *   5. скан паттернов (раз в PATTERN_SCAN_MIN), новостные ленты (раз в NEWS_POLL_MIN) и уведомления в Telegram
  * Состояние пишется в SyncState (worker_status) — дашборд показывает, жив ли воркер и какой лаг.
  */
 import "dotenv/config";
@@ -34,6 +34,7 @@ import { getTronGrid } from "../src/lib/tron/client";
 import { pgConnection } from "../src/lib/pg-config";
 import { runAlerts } from "../src/lib/alerts/engine";
 import { scanAndStore } from "../src/lib/patterns/scan";
+import { pollNews } from "../src/lib/news/ingest";
 
 const LOCK_ID = 73_100_001; // произвольный, но постоянный ключ pg_advisory_lock
 
@@ -76,6 +77,7 @@ async function acquireLock(): Promise<pg.Client> {
 let lastPatternScan = 0;
 let lastPrune = 0;
 let lastKeepalive = 0;
+let lastNewsPoll = 0;
 
 /** Время начала последнего скана паттернов — переживает перезапуск воркера. */
 const PATTERN_ATTEMPT_KEY = "pattern_scan_attempt";
@@ -146,6 +148,20 @@ async function tick() {
     patterns = { ...(await scanAndStore(e.PATTERN_SCAN_DAYS)) };
     log("info", "pattern scan", patterns);
   }
+
+  // Новости — RSS, без TronGrid. Сбой лент не должен останавливать остальной цикл.
+  let news: Record<string, unknown> | undefined;
+  if (e.NEWS_POLL_MIN > 0 && Date.now() - lastNewsPoll >= e.NEWS_POLL_MIN * 60_000) {
+    lastNewsPoll = Date.now();
+    try {
+      const r = await pollNews();
+      news = { created: r.created, merged: r.merged, failed: r.failed };
+      if (r.created || r.failed.length) log(r.failed.length ? "warn" : "info", "news", news);
+    } catch (err) {
+      log("error", "news failed", { message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   const alerts = await runAlerts();
   if (alerts.events) log("info", "alerts", { ...alerts });
 
@@ -153,7 +169,7 @@ async function tick() {
   if (Date.now() - lastPrune >= 6 * 3_600_000) {
     lastPrune = Date.now();
     const pruned = await pruneOldData(e.TRANSFER_RETENTION_DAYS);
-    if (pruned.transfers || pruned.snapshots || pruned.alertEvents) log("info", "prune", pruned);
+    if (pruned.transfers || pruned.snapshots || pruned.alertEvents || pruned.news) log("info", "prune", pruned);
   }
 
   // Бесплатный Render усыпляет сервис без входящих запросов через 15 минут — будим сами себя
@@ -165,7 +181,7 @@ async function tick() {
     );
   }
 
-  return { jobs, backfills, balances, ingest, overBudget, alerts, patterns };
+  return { jobs, backfills, balances, ingest, overBudget, alerts, patterns, news };
 }
 
 async function main() {
