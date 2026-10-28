@@ -160,6 +160,7 @@ enum AlertType {
   NEW_COUNTERPARTY // первый перевод с/на адрес, которого ещё не было в базе
   PATTERN          // найден новый паттерн (fan-in / fan-out / кольцо)
   NEWS             // новость с важностью не ниже порога
+  DERIVATIVES      // ликвидации или изменение открытого интереса за час выше порога
 }
 
 /// Правило уведомления. Параметры зависят от типа (см. src/lib/alerts/rules.ts).
@@ -277,4 +278,28 @@ model NewsItem {
   createdAt   DateTime      @default(now())
 
   @@index([publishedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Деривативы: бессрочные фьючерсы Binance и Bybit (src/lib/market)
+// ---------------------------------------------------------------------------
+
+/// Снимок по монете на бирже раз в MARKET_POLL_MIN. Ликвидации — сумма из потока биржи с прошлого снимка.
+model MarketSnapshot {
+  id           BigInt   @id @default(autoincrement())
+  /// binance | bybit
+  exchange     String   @db.VarChar(16)
+  /// BTC, ETH, XRP, SOL
+  asset        String   @db.VarChar(10)
+  takenAt      DateTime
+  price        Float
+  oiUsd        Float
+  /// Ставка финансирования, приведённая к 8 ч (0.0001 = 0,01 %)
+  funding8h    Float
+  volume24hUsd Float
+  change24hPct Float
+  liqLongUsd   Float    @default(0)
+  liqShortUsd  Float    @default(0)
+
+  @@index([takenAt])
 }

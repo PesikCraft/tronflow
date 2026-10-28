@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bell, LayoutDashboard, Network, Newspaper, ScanSearch, Wallet } from "lucide-react";
+import { Activity, Bell, Gauge, LayoutDashboard, Network, Newspaper, ScanSearch, Wallet } from "lucide-react";
 
 const GROUPS = [
   {
@@ -10,6 +10,7 @@ const GROUPS = [
     items: [
       { href: "/", label: "Обзор", icon: LayoutDashboard },
       { href: "/liquidity", label: "Ликвидность", icon: Activity },
+      { href: "/derivatives", label: "Деривативы", icon: Gauge },
       { href: "/news", label: "Новости", icon: Newspaper },
       { href: "/graph", label: "Граф связей", icon: Network },
       { href: "/patterns", label: "Паттерны", icon: ScanSearch },

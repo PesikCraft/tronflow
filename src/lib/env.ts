@@ -27,6 +27,8 @@ const coreSchema = z.object({
   PATTERN_SCAN_MAX_ROWS: num(100_000),
   /** Как часто читать новостные ленты, мин (0 — не читать) */
   NEWS_POLL_MIN: z.coerce.number().min(0).default(5),
+  /** Как часто снимать деривативы Binance и Bybit, мин (0 — не снимать и не слушать ликвидации) */
+  MARKET_POLL_MIN: z.coerce.number().min(0).default(5),
   /** Адрес дашборда для ссылок в Telegram, например http://192.168.1.20:3000 */
   DASHBOARD_URL: z.string().default(""),
   TELEGRAM_BOT_TOKEN: z.string().default(""),

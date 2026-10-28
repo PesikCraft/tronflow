@@ -5,6 +5,7 @@ import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { ALERT_TYPES, DEFAULT_PARAMS, PATTERN_TYPES, TYPE_INFO, type AlertTypeName } from "@/lib/alerts/rules";
 import { CATEGORIES, CATEGORY_LABEL, fmtAgo } from "@/lib/format";
 import { assetLabel, NEWS_ASSETS } from "@/lib/news/classify";
+import { MARKET_ASSETS } from "@/lib/market/exchanges";
 
 interface Rule {
   id: number;
@@ -31,7 +32,7 @@ const newDraft = (type: AlertTypeName = "WHALE"): Draft => ({
   params: { ...DEFAULT_PARAMS[type] } as Record<string, unknown>,
   categories: [],
   addresses: [],
-  cooldownMin: type === "VOLUME_SPIKE" ? 60 : 0,
+  cooldownMin: type === "VOLUME_SPIKE" || type === "DERIVATIVES" ? 60 : 0,
 });
 
 async function api(url: string, init?: RequestInit) {
@@ -50,6 +51,24 @@ function NumberField({ label, value, onChange, suffix, step = 1 }: { label: stri
         {suffix && <span className="text-muted text-xs">{suffix}</span>}
       </span>
     </label>
+  );
+}
+
+/** Галочки монет: ничего не выбрано — все. */
+function AssetChecks({ assets, value, onChange, legend }: { assets: readonly string[]; value: unknown; onChange: (v: string[]) => void; legend: string }) {
+  const list = (value as string[]) ?? [];
+  return (
+    <fieldset className="flex flex-col gap-1">
+      <legend className="text-fg-2 text-xs">{legend}</legend>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+        {assets.map((a) => (
+          <label key={a} className="flex items-center gap-1.5 text-sm">
+            <input type="checkbox" checked={list.includes(a)} onChange={(e) => onChange(e.target.checked ? [...list, a] : list.filter((x) => x !== a))} />
+            {assetLabel(a)}
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
@@ -141,26 +160,21 @@ function RuleForm({ initial, onSave, onCancel }: { initial: Draft; onSave: (d: D
         {d.type === "NEWS" && (
           <>
             <NumberField label="Важность от" value={p.minImpact} onChange={(v) => setP("minImpact", v)} suffix="из 10" />
-            <fieldset className="flex flex-col gap-1">
-              <legend className="text-fg-2 text-xs">По каким монетам. Ничего не выбрано — любые</legend>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
-                {NEWS_ASSETS.map((a) => {
-                  const list = (p.assets as string[]) ?? [];
-                  return (
-                    <label key={a} className="flex items-center gap-1.5 text-sm">
-                      <input type="checkbox" checked={list.includes(a)} onChange={(e) => setP("assets", e.target.checked ? [...list, a] : list.filter((x) => x !== a))} />
-                      {assetLabel(a)}
-                    </label>
-                  );
-                })}
-              </div>
-            </fieldset>
+            <AssetChecks assets={NEWS_ASSETS} value={p.assets} onChange={(v) => setP("assets", v)} legend="По каким монетам. Ничего не выбрано — любые" />
+          </>
+        )}
+        {d.type === "DERIVATIVES" && (
+          <>
+            <NumberField label="Ликвидации за час от" value={p.minLiqUsd} onChange={(v) => setP("minLiqUsd", v)} suffix="$ (0 — не следить)" step={1_000_000} />
+            <NumberField label="Открытый интерес за час" value={p.minOiChangePct} onChange={(v) => setP("minOiChangePct", v)} suffix="± % (0 — не следить)" step={0.5} />
+            <NumberField label="Не чаще раза в" value={d.cooldownMin} onChange={(v) => setD({ ...d, cooldownMin: v })} suffix="мин" step={15} />
+            <AssetChecks assets={MARKET_ASSETS} value={p.assets} onChange={(v) => setP("assets", v)} legend="По каким монетам. Ничего не выбрано — все" />
           </>
         )}
       </div>
 
-      {/* Новости к кошелькам не привязаны */}
-      {d.type !== "NEWS" && (
+      {/* Новости и деривативы к кошелькам не привязаны */}
+      {d.type !== "NEWS" && d.type !== "DERIVATIVES" && (
         <fieldset>
           <legend className="text-fg-2 text-xs">Для каких кошельков. Ничего не выбрано — вся адресная книга</legend>
           <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">

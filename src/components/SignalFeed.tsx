@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Activity, BellOff, Fish, Newspaper, ScanSearch, UserPlus } from "lucide-react";
+import { Activity, BellOff, Fish, Gauge, Newspaper, ScanSearch, UserPlus } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { fmtAgo } from "@/lib/format";
 
-const ICON = { WHALE: Fish, VOLUME_SPIKE: Activity, NEW_COUNTERPARTY: UserPlus, PATTERN: ScanSearch, NEWS: Newspaper } as const;
+const ICON = { WHALE: Fish, VOLUME_SPIKE: Activity, NEW_COUNTERPARTY: UserPlus, PATTERN: ScanSearch, NEWS: Newspaper, DERIVATIVES: Gauge } as const;
 const STATUS = { SENT: "", FAILED: "не доставлено", SKIPPED: "только в журнале" } as const;
 
 /** Последние сработавшие сигналы — то же, что уходит в Telegram. */

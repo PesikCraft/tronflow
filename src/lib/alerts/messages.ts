@@ -139,3 +139,37 @@ export function newsMessage(nw: NewsInfo, ruleName: string, ctx: LinkCtx) {
 export function newsDigestLine(nw: NewsInfo) {
   return `${DIRECTION[nw.sentiment].split(" ")[0]} ${nw.impact}/10 <a href="${e(nw.url)}">${e(nw.title)}</a>`;
 }
+
+export interface DerivInfo {
+  asset: string;
+  price: number;
+  priceChange1h: number | null;
+  oiUsd: number;
+  oiChange1h: number | null;
+  funding8h: number;
+  liq1h: { long: number; short: number };
+  reading: { headline: string };
+}
+
+/** Цена: у дешёвых монет (XRP) важны копейки. */
+const price = (v: number) => v.toLocaleString("ru-RU", { maximumFractionDigits: v >= 1000 ? 0 : v >= 1 ? 2 : 4 });
+const usd = (v: number) => (v >= 1e9 ? `$${(v / 1e9).toFixed(1)} млрд` : `$${(v / 1e6).toFixed(1)} млн`);
+const signed = (v: number | null) => (v === null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)} %`);
+
+/** kind: liq — волна ликвидаций, oi — резкое изменение открытого интереса. */
+export function derivMessage(m: DerivInfo, kind: "liq" | "oi", ruleName: string, ctx: LinkCtx) {
+  const liq = m.liq1h.long + m.liq1h.short;
+  const head =
+    kind === "liq"
+      ? `💥 <b>Ликвидации ${e(m.asset)} за час: ${usd(liq)}</b> — ${e(ruleName)}`
+      : `📊 <b>Открытый интерес ${e(m.asset)} за час ${signed(m.oiChange1h)}</b> — ${e(ruleName)}`;
+  const lines = [
+    head,
+    kind === "liq"
+      ? `Лонги ${usd(m.liq1h.long)} · шорты ${usd(m.liq1h.short)}: ${m.liq1h.long >= m.liq1h.short ? "вынужденные продажи" : "вынужденные покупки"}`
+      : e(m.reading.headline),
+    `Цена ${price(m.price)} $ (за час ${signed(m.priceChange1h)}) · интерес ${usd(m.oiUsd)} · финансирование ${(m.funding8h * 100).toFixed(3)} % за 8 ч`,
+  ];
+  if (ctx.dashboardUrl) lines.push(`<a href="${ctx.dashboardUrl}/derivatives">Деривативы</a>`);
+  return lines.join("\n");
+}

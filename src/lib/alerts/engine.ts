@@ -3,7 +3,8 @@
  *   1. новые «живые» переводы (не старше LIVE_WINDOW) -> правила WHALE и NEW_COUNTERPARTY;
  *   2. скользящее окно объёма -> VOLUME_SPIKE (не чаще cooldownMin);
  *   3. новые находки сканера паттернов -> PATTERN;
- *   4. новые новости с важностью не ниже порога -> NEWS.
+ *   4. новые новости с важностью не ниже порога -> NEWS;
+ *   5. ликвидации и открытый интерес за час -> DERIVATIVES (не чаще cooldownMin на монету).
  * Каждое событие пишется в AlertEvent с уникальным dedupeKey — повторов не бывает,
  * даже если воркер перезапустился посреди отправки.
  */
@@ -11,7 +12,9 @@ import { prisma } from "../db";
 import type { AlertRule } from "../../generated/prisma/client";
 import { getState, setState } from "../ingest";
 import { sendTelegram, telegramChatId, telegramToken } from "../telegram";
+import { getMarketOverview } from "../market/read";
 import {
+  derivMessage,
   digestLine,
   digestMessage,
   newCounterpartyMessage,
@@ -226,6 +229,37 @@ export async function runAlerts(opts: { send?: Sender; now?: Date } = {}): Promi
   }
   await setState(NEWS_CURSOR, String(maxNewsId));
 
+  // --- 5. Деривативы ----------------------------------------------------------------
+  const derivRules = rules.filter((r) => r.type === "DERIVATIVES");
+  if (derivRules.length) {
+    const markets = await getMarketOverview(now.getTime());
+    for (const rule of derivRules) {
+      const p = parseParams("DERIVATIVES", rule.params) as RuleParams<"DERIVATIVES">;
+      // Окно дедупликации — cooldownMin: одно сообщение на монету и вид события за окно
+      const bucket = Math.floor(now.getTime() / (Math.max(rule.cooldownMin, 15) * 60_000));
+      for (const m of markets) {
+        if (p.assets.length && !(p.assets as string[]).includes(m.asset)) continue;
+        const liq = m.liq1h.long + m.liq1h.short;
+        if (p.minLiqUsd > 0 && liq >= p.minLiqUsd) {
+          pending.push({
+            rule,
+            dedupeKey: `liq:${m.asset}:${bucket}`,
+            title: `Ликвидации ${m.asset} за час: $${Math.round(liq / 1e6)} млн`,
+            message: derivMessage(m, "liq", rule.name, ctx),
+          });
+        }
+        if (p.minOiChangePct > 0 && m.oiChange1h !== null && Math.abs(m.oiChange1h) >= p.minOiChangePct) {
+          pending.push({
+            rule,
+            dedupeKey: `oi:${m.asset}:${bucket}`,
+            title: `Открытый интерес ${m.asset} за час ${m.oiChange1h > 0 ? "+" : "−"}${Math.abs(m.oiChange1h).toFixed(1)} %`,
+            message: derivMessage(m, "oi", rule.name, ctx),
+          });
+        }
+      }
+    }
+  }
+
   return deliver(pending, opts.send);
 }
 
@@ -269,7 +303,7 @@ export async function measureSpike(scope: string[], p: RuleParams<"VOLUME_SPIKE"
   return { current: row.current, baseline, count: row.n, top };
 }
 
-const ICON: Record<string, string> = { WHALE: "🐋", NEW_COUNTERPARTY: "🆕", VOLUME_SPIKE: "📈", PATTERN: "🔍", NEWS: "📰" };
+const ICON: Record<string, string> = { WHALE: "🐋", NEW_COUNTERPARTY: "🆕", VOLUME_SPIKE: "📈", PATTERN: "🔍", NEWS: "📰", DERIVATIVES: "📊" };
 
 /** Сохраняет события (без дублей) и отправляет: по одному сообщению или сводкой. */
 async function deliver(pending: PendingEvent[], send?: Sender): Promise<AlertRunResult> {

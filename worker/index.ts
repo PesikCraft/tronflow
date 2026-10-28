@@ -7,7 +7,9 @@
  *   2. бэкфилл истории новых кошельков
  *   3. новые переводы: firehose (по умолчанию) или poll
  *   4. балансы кошельков, у которых были переводы, + плановый проход
- *   5. скан паттернов (раз в PATTERN_SCAN_MIN), новостные ленты (раз в NEWS_POLL_MIN) и уведомления в Telegram
+ *   5. скан паттернов (раз в PATTERN_SCAN_MIN), новостные ленты (раз в NEWS_POLL_MIN),
+ *      снимок деривативов (раз в MARKET_POLL_MIN) и уведомления в Telegram
+ * Отдельно, всё время работы — потоки ликвидаций Binance и Bybit (WebSocket).
  * Состояние пишется в SyncState (worker_status) — дашборд показывает, жив ли воркер и какой лаг.
  */
 import "dotenv/config";
@@ -35,6 +37,9 @@ import { pgConnection } from "../src/lib/pg-config";
 import { runAlerts } from "../src/lib/alerts/engine";
 import { scanAndStore } from "../src/lib/patterns/scan";
 import { pollNews } from "../src/lib/news/ingest";
+import { MARKET_ASSETS } from "../src/lib/market/exchanges";
+import { pollMarket } from "../src/lib/market/ingest";
+import { LiquidationFeed } from "../src/lib/market/liquidations";
 
 const LOCK_ID = 73_100_001; // произвольный, но постоянный ключ pg_advisory_lock
 
@@ -78,6 +83,10 @@ let lastPatternScan = 0;
 let lastPrune = 0;
 let lastKeepalive = 0;
 let lastNewsPoll = 0;
+let lastMarketPoll = 0;
+
+/** Ликвидации копятся из потоков бирж между снимками рынка. */
+const liquidations = new LiquidationFeed(MARKET_ASSETS);
 
 /** Время начала последнего скана паттернов — переживает перезапуск воркера. */
 const PATTERN_ATTEMPT_KEY = "pattern_scan_attempt";
@@ -162,6 +171,18 @@ async function tick() {
     }
   }
 
+  // Деривативы — публичные API бирж, без TronGrid; сбой биржи не останавливает цикл
+  let market: Record<string, unknown> | undefined;
+  if (e.MARKET_POLL_MIN > 0 && Date.now() - lastMarketPoll >= e.MARKET_POLL_MIN * 60_000) {
+    lastMarketPoll = Date.now();
+    try {
+      market = await pollMarket(liquidations);
+      if ((market.failed as string[]).length) log("warn", "market", market);
+    } catch (err) {
+      log("error", "market failed", { message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   const alerts = await runAlerts();
   if (alerts.events) log("info", "alerts", { ...alerts });
 
@@ -169,7 +190,7 @@ async function tick() {
   if (Date.now() - lastPrune >= 6 * 3_600_000) {
     lastPrune = Date.now();
     const pruned = await pruneOldData(e.TRANSFER_RETENTION_DAYS);
-    if (pruned.transfers || pruned.snapshots || pruned.alertEvents || pruned.news) log("info", "prune", pruned);
+    if (pruned.transfers || pruned.snapshots || pruned.alertEvents || pruned.news || pruned.market) log("info", "prune", pruned);
   }
 
   // Бесплатный Render усыпляет сервис без входящих запросов через 15 минут — будим сами себя
@@ -181,7 +202,7 @@ async function tick() {
     );
   }
 
-  return { jobs, backfills, balances, ingest, overBudget, alerts, patterns, news };
+  return { jobs, backfills, balances, ingest, overBudget, alerts, patterns, news, market };
 }
 
 async function main() {
@@ -192,6 +213,7 @@ async function main() {
   // Отметка сразу при старте: первый цикл (догонка сети) может идти минуту и дольше
   await setState("worker_status", JSON.stringify({ at: Date.now(), mode: e.INGEST_MODE, starting: true, ingest: {} }));
   log("info", "worker started", { mode: e.INGEST_MODE, tickSec: e.WORKER_TICK_SEC, apiKey: Boolean(e.TRONGRID_API_KEY) });
+  if (e.MARKET_POLL_MIN > 0) liquidations.start();
 
   const tg = getTronGrid();
   while (!stopping) {
@@ -218,6 +240,7 @@ async function main() {
     if (wait > 0 && !stopping) await sleep(wait);
   }
 
+  liquidations.stop();
   await lock.end();
   await prisma.$disconnect();
   log("info", "worker stopped");
